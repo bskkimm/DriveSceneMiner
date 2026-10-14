@@ -89,6 +89,9 @@ uv run jevsceneminer classify out/boston --out out/boston-jev-reference \
 missing or incompatible. Changing the script, questions, requested model,
 provider or Microsoft endpoint can invalidate compatibility. Legacy Jev cache
 keys and old result files remain readable.
+Older folders may not record the requested Jev model or original questions.
+Pass their original `--model` and `--labels` explicitly to reuse those caches;
+the resolved response model alone does not establish the original request.
 
 ## Review each model's results
 
@@ -121,10 +124,10 @@ uv run jevsceneminer compare \
 ```
 
 This writes `report.json` and `report.md`. It checks identical readable scripts
-at common timestamps, matching cadence, and question-definition hashes when
-available. Different question hashes are rejected; older runs without hashes
-are explicitly marked unverified. A full reference can be compared with short
-trials on their shared timestamps.
+at common timestamps, matching cadence, question-definition hashes and merge
+settings when available. Different questions or merge settings are rejected;
+older runs with missing fields are explicitly marked unverified. A full reference
+can be compared with short trials on their shared timestamps.
 
 Agreement uses only explicitly labeled GT inside those common inference cells.
 Unreviewed time is excluded and missing predictions remain unknown. Partial GT
@@ -132,8 +135,15 @@ and short trials do not establish full-log precision/recall or true maneuver
 boundary accuracy. Use independent, complete evaluation intervals for those
 claims; see [evaluation](evaluation.md).
 
-Runtime reports distinguish requested deployment/model, resolved model, fresh
-answers, cache reuse, inference wall time and reported token usage. Missing usage
+Runtime reports distinguish the latest invocation from accumulated attempts in
+that output folder. An append-only attempt journal retains successful responses
+from interrupted inference; cached reruns do not replace the recorded total with
+zero. Inherited source-cache costs are excluded from a new trial's total. Legacy
+folders without complete attempt history have unknown run totals. Abrupt process
+termination and unreported failed-request billing can still leave usage unrecorded.
+
+Reports also record requested deployment/model, resolved model, fresh answers,
+inference wall time and reported token usage. Missing usage
 produces unknown cost. Microsoft pricing is unknown by default; configure both
 `--input-price` and `--output-price` in USD per million tokens if you know the
 applicable rates. Jev 1.x and OpenAI `gpt-6-luna` use dated input-price estimates;

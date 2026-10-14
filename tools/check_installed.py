@@ -2,6 +2,8 @@
 import json
 from importlib.resources import files
 
+import httpx
+
 from jevsceneminer.cli import DEFAULT_LABELS
 from jevsceneminer.jev import load_labels
 from jevsceneminer.viewer import PAGE
@@ -15,5 +17,6 @@ assert all(PAGE.with_name(name).is_file() for name in ['camera_decisions.js', 'b
 assert files("jevsceneminer").joinpath("presets/nuplan-1hz.yaml").is_file()
 assert create_backend(Settings('openai','gpt-6-luna','https://api.openai.com/v1/decisions')).provider=='openai'
 assert create_backend(Settings('microsoft','deployment','https://example.test/providers/microsoft/v1/systemone')).provider=='microsoft'
+assert callable(httpx.AsyncClient)
 print(json.dumps({'labels': labels.version, 'lateral_choices': 11, 'longitudinal_choices': 5,
                   'viewer_resources': 'available', 'preferred_preset': 'available'}))

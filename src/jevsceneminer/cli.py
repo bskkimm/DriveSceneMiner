@@ -21,7 +21,7 @@ from jevsceneminer.evidence.facts import DT_S, build_timeline
 from jevsceneminer.inference.jev import Answer, AnswerCache, JevClassifier, JevError, cache_key, load_labels
 from jevsceneminer.inference.config import PROVIDERS, auth_headers, create_backend, resolve_settings
 from jevsceneminer.inference.engine import DecisionClassifier
-from jevsceneminer.inference.usage import runtime_usage
+from jevsceneminer.inference.usage import record_attempt, runtime_usage
 from jevsceneminer.inference.runs import fork_run, script_hash
 from jevsceneminer.evidence.lanes import LaneMap
 from jevsceneminer.inputs.nuplan import read_nuplan
@@ -171,9 +171,10 @@ def _labels_for(args, meta: dict, lateral_only: bool = False):
 
 
 def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
-    """Ask Jev about every script of one session, then stitch and write its run file."""
+    """Classify selected scripts, then merge and write this provider's scenes."""
     sid = f"{meta['date']}_{meta['name']}"
     cache = AnswerCache(out / "cache" / f"{sid}.jsonl")
+    existing_cache = cache.path.is_file() and cache.path.stat().st_size > 0
     path = out / 'steps' / f'{sid}.jsonl'
     lines = path.read_text().splitlines(keepends=True)
     rows = [json.loads(line) for line in lines if line.strip()]
@@ -200,14 +201,22 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
             row.get('longitudinal_probs', {}), row.get('model'), row.get('input_tokens'),
             provider=row.get('provider', 'jev'), output_tokens=row.get('output_tokens'))
     started = time.perf_counter()
-    if settings.provider == 'jev':
-        classifier = JevClassifier(labels, cache, model=model, workers=args.workers)
-    else:
-        classifier = DecisionClassifier(labels, cache, model=model, workers=args.workers,
-                                        backend=create_backend(settings))
-    answers.update(classifier.classify(selected))
-    inference_seconds = time.perf_counter() - started
-    fresh = cache.written_answers
+    status = 'failed'
+    try:
+        if settings.provider == 'jev':
+            classifier = JevClassifier(labels, cache, model=model, workers=args.workers)
+        else:
+            classifier = DecisionClassifier(labels, cache, model=model, workers=args.workers,
+                                            backend=create_backend(settings))
+        answers.update(classifier.classify(selected))
+        status = 'completed'
+    finally:
+        usage = runtime_usage(cache.written_answers, settings,
+                              getattr(args, 'input_price', None), getattr(args, 'output_price', None))
+        record_attempt(out, sid, dict(status=status, inference_seconds=time.perf_counter() - started,
+            selected_samples=len(selected), fresh_answers=len(cache.written_answers), model=model,
+            range_s=[from_s, to_s] if ranged else None, **usage),
+            inherited_cache=bool(meta.get('source_run')), existing_cache=existing_cache)
     result = []
     for line in lines:
         if not line.strip():
@@ -249,12 +258,6 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
         "require_indicator": args.require_indicator, "traffic_side": labels.traffic_side,
         "reclassified_samples": len(selected), "classification_range_s": [from_s, to_s] if ranged else None})
     path = write_scenes(out, doc)
-    (out / 'runtime').mkdir(exist_ok=True)
-    usage = runtime_usage(fresh, settings, getattr(args, 'input_price', None), getattr(args, 'output_price', None))
-    (out / 'runtime' / f'{sid}.json').write_text(json.dumps(dict(
-        inference_seconds=inference_seconds, selected_samples=len(selected), fresh_answers=len(fresh),
-        model=model, range_s=[from_s, to_s] if ranged else None,
-        **usage), indent=2)+'\n')
     meta_path = out / 'meta' / f'{sid}.json'
     if meta_path.is_file():
         updated_meta = dict(meta, inference_provider=settings.provider,
@@ -303,7 +306,7 @@ def cmd_run(args) -> int:
 
 
 def cmd_classify(args) -> int:
-    """Jev + stitching for every session a `run --dry-run` prepared under <out>."""
+    """Classify and merge every prepared session under <out>."""
     out = Path(args.out)
     destination = getattr(args, 'result_out', None)
     if destination and not getattr(args, 'dry_run', False):
@@ -437,7 +440,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="jevsceneminer", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
 
-    r = sub.add_parser("run", help="bags -> scripts -> Jev -> scenes")
+    r = sub.add_parser("run", help="driving logs -> scripts -> decision model -> scenes")
     r.add_argument("sessions", nargs="*", help="session folders with .mcap chunks")
     r.add_argument("--spans", default=None,
                    help="JSON list of sessions as {name, date, start_s, end_s, files[, map]}")
@@ -470,18 +473,18 @@ def main(argv=None) -> int:
     r.add_argument("--min-scene", type=float, default=2.0, help="shorter label runs are merged away")
     r.add_argument("--min-phase", type=float, default=1.0, help="merge shorter longitudinal phases")
     r.add_argument("--min-prob", type=float, default=0.4,
-                   help="maneuvers with a lower mean Jev probability become keep_lane")
-    r.add_argument("--workers", type=int, default=8, help="parallel Jev calls")
-    r.add_argument("--model", default=None, help="Jev model (default: the API's default)")
-    r.add_argument("--lateral-only", action="store_true", help="ask Jev only the lateral question")
+                   help="maneuvers with lower mean probability become keep_lane")
+    r.add_argument("--workers", type=int, default=8, help="parallel inference requests")
+    r.add_argument("--model", default=None, help="provider model or Microsoft deployment name")
+    r.add_argument("--lateral-only", action="store_true", help="ask only the lateral question")
     r.add_argument("--require-indicator", action="store_true",
-                   help="turns, lane changes and pull-over/out need the matching indicator (a rule on top of Jev)")
-    r.add_argument("--dry-run", action="store_true", help="write scripts and a cost estimate, no Jev calls")
+                   help="turns, lane changes and pull-over/out need the matching indicator")
+    r.add_argument("--dry-run", action="store_true", help="write scripts and an estimate, no API calls")
     r.add_argument("--max-steps", type=int, default=0, help="only this many steps (smoke tests)")
     r.add_argument("--first-step", type=int, default=0, help="with --max-steps: index of the first step")
     r.set_defaults(func=cmd_run)
 
-    c = sub.add_parser("classify", help="Jev + scenes for sessions prepared by `run --dry-run`")
+    c = sub.add_parser("classify", help="decision probabilities + scenes from prepared scripts")
     c.add_argument("out", help="the --out folder of `run --dry-run`")
     c.add_argument('--out', dest='result_out', help='new separate result folder; original evidence is preserved')
     c.add_argument('--cache-only', action='store_true', help='reuse compatible cached answers; never call an API')
@@ -494,11 +497,11 @@ def main(argv=None) -> int:
     c.add_argument("--min-phase", type=float, default=1.0, help="merge shorter longitudinal phases")
     c.add_argument("--min-prob", type=float, default=0.4)
     c.add_argument("--require-indicator", action="store_true")
-    c.add_argument("--lateral-only", action="store_true", help="ask Jev only the lateral question")
+    c.add_argument("--lateral-only", action="store_true", help="ask only the lateral question")
     c.add_argument("--strip-map", action="store_true",
                    help="remove every map-derived fact from the scripts first (no-map ablation)")
     c.add_argument("--workers", type=int, default=8)
-    c.add_argument("--model", default=None)
+    c.add_argument("--model", default=None, help="provider model or Microsoft deployment name")
     c.add_argument('--dry-run', action='store_true', help='inspect provider configuration without API calls')
     c.set_defaults(func=cmd_classify)
 
@@ -555,7 +558,8 @@ def main(argv=None) -> int:
         settings = yaml.safe_load((Path(__file__).resolve().parent / 'presets' / f'{preset_args.preset}.yaml').read_text())
         r.set_defaults(**settings)
     args = p.parse_args(argv)
-    if args.command == 'run' and args.provider not in (None, 'jev') and '--model' not in argv:
+    explicit_model = any(value == '--model' or value.startswith('--model=') for value in argv)
+    if args.command == 'run' and args.provider not in (None, 'jev') and not explicit_model:
         args.model = None  # A cadence preset must not select a different provider's model.
     if args.command in ('run', 'classify') and args.workers < 1:
         p.error('--workers must be positive')

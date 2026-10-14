@@ -2,10 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 
 from .config import auth_headers
 from .contracts import Answer, DecisionError
+
+
+def _unique_members(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate JSON member')
+        result[key] = value
+    return result
 
 
 def parse_choices(answers, labels, provider, model, usage):
@@ -68,7 +78,7 @@ class HTTPBackend:
             else:
                 if response.status_code == 200:
                     try:
-                        payload = response.json()
+                        payload = json.loads(response.content, object_pairs_hook=_unique_members)
                     except ValueError:
                         raise DecisionError(f'{self.provider}: invalid JSON response') from None
                     if not isinstance(payload, dict):

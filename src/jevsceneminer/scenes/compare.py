@@ -4,7 +4,11 @@ import math
 from pathlib import Path
 
 from jevsceneminer.inference.runs import read_rows, script_hash
+from jevsceneminer.inference.usage import USAGE_TOTAL_FIELDS
+
 from .evaluate import spans
+
+MERGE_FIELDS = ('min_scene_s', 'min_phase_s', 'min_prob', 'maneuver_tail_s', 'require_indicator')
 
 
 def _union(intervals):
@@ -74,7 +78,7 @@ def compare_runs(runs, out, gt_dir=None):
             data[name][sid] = dict(meta=meta, rows=rows, scenes=scenes,
                                   runtime=json.loads(runtime.read_text()) if runtime.exists() else {})
     report = dict(schema_version='jsm-comparison-1', same_scripts=True,
-                  question_definitions_verified=True, sessions={}, runs={})
+                  question_definitions_verified=True, merge_configuration_verified=True, sessions={}, runs={})
     reviewed_by_run = {name:{key:dict(reviewed_seconds=0.,predicted_reviewed_seconds=0.,
                                     unknown_seconds=0.,correct_seconds=0.) for key in ('lateral','longitudinal')}
                        for name in runs}
@@ -91,6 +95,13 @@ def compare_runs(runs, out, gt_dir=None):
         if len({value for value in questions if value}) > 1:
             raise ValueError('compared question definitions differ')
         report['question_definitions_verified'] &= all(questions)
+        generators = [item[sid]['scenes'].get('generator', {}) for item in data.values()]
+        for field in MERGE_FIELDS:
+            known = [generator[field] for generator in generators if field in generator]
+            if any(value != known[0] for value in known[1:]):
+                raise ValueError(f'compared merge configurations differ: {field}')
+        merge_verified = all(all(field in generator for field in MERGE_FIELDS) for generator in generators)
+        report['merge_configuration_verified'] &= merge_verified
         first = next(iter(data.values()))[sid]['meta']
         step = first['step_s']
         if any(item[sid]['meta']['step_s'] != step for item in data.values()):
@@ -98,7 +109,7 @@ def compare_runs(runs, out, gt_dir=None):
         domain = _union([(max(first['start_ns']/1e9,t/1e9-step/2),
                           min(first['end_ns']/1e9,t/1e9+step/2)) for t in common])
         report['sessions'][sid] = dict(common_samples=len(common), common_script_sha256=script_hash(selected),
-                                       intervals_s=domain)
+                                       intervals_s=domain, merge_configuration_verified=merge_verified)
         gt_path = Path(gt_dir)/f'{sid}.json' if gt_dir else None
         if gt_path and gt_path.is_file():
             gt = json.loads(gt_path.read_text())
@@ -109,20 +120,24 @@ def compare_runs(runs, out, gt_dir=None):
                         reviewed_by_run[name][key][field] += metrics[field]
     for name, item in data.items():
         runtime = [value['runtime'] for value in item.values()]
-        def total(field):
-            values = [r.get(field) for r in runtime]
-            return sum(values) if all(isinstance(v,(int,float)) for v in values) else None
+        def total(records, field):
+            values = [record.get(field) for record in records]
+            return sum(values) if all(isinstance(v,(int,float)) and not isinstance(v,bool) for v in values) else None
+        totals = [record.get('run_total', {}) for record in runtime]
+        latest = {field: total(runtime, field) for field in USAGE_TOTAL_FIELDS}
         reviewed = reviewed_by_run[name]
         for metrics in reviewed.values():
             metrics['agreement'] = metrics['correct_seconds']/metrics['reviewed_seconds'] if metrics['reviewed_seconds'] else None
         report['runs'][name] = dict(providers=sorted({value['meta'].get('inference_provider','jev') for value in item.values()}),
             models=sorted({row.get('model','unknown') or 'unknown' for value in item.values() for row in value['rows']}),
-            fresh_answers=total('fresh_answers'), inference_seconds=total('inference_seconds'),
-            estimated_cost_usd=total('estimated_cost_usd'), reviewed=reviewed)
+            **{field: total(totals, field) for field in USAGE_TOTAL_FIELDS},
+            usage_history_complete=all(record.get('history_complete', False) for record in totals),
+            latest_invocation=latest, recorded_attempts=total(totals, 'attempts'), reviewed=reviewed)
     report['notes'] = ['Agreement uses only explicitly labeled GT within common inference cells; unlabeled time is excluded.',
                        'Partial trials do not establish full-log precision/recall or maneuver boundary accuracy.',
-                       'Wall time and cost include cached/fresh counts; different sample sets and cache hits limit speed comparisons.',
-                       'Legacy runs without question hashes cannot establish identical question definitions.']
+                       'Time and cost sum recorded attempts in each output folder, excluding inherited cache costs; latest invocation is reported separately.',
+                       'Missing historical usage remains unknown. Different sample sets, resumes and cache hits limit speed comparisons.',
+                       'Legacy runs without question hashes or merge settings cannot establish matching configuration.']
     out.mkdir(parents=True)
     (out/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
     lines=['# Decision-provider comparison','', '| Run | Provider | Fresh answers | Inference (s) | Estimated cost (USD) | Reviewed lateral agreement |',

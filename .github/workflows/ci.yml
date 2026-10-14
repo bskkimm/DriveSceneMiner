@@ -43,7 +43,9 @@ jobs:
         run: |
           uv build --wheel
           uv venv /tmp/jevsceneminer-installed --python '${{ matrix.python }}'
-          uv pip install --python /tmp/jevsceneminer-installed/bin/python dist/*.whl
+          for wheel in dist/*.whl; do
+            uv pip install --python /tmp/jevsceneminer-installed/bin/python "${wheel}[decisions]"
+          done
           cd /tmp
           /tmp/jevsceneminer-installed/bin/python -I "$GITHUB_WORKSPACE/tools/check_installed.py"
           /tmp/jevsceneminer-installed/bin/jevsceneminer run --help
