@@ -105,6 +105,7 @@ class Answer:
     model: str | None = None
     input_tokens: int | None = None
     provider: str = "jev"
+    output_tokens: int | None = None
 
 
 class JevError(RuntimeError):

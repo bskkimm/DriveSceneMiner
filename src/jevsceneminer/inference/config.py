@@ -66,3 +66,14 @@ def auth_headers(settings):
     if not key:
         raise ValueError(f'{variable} is not set; configure it locally or use --dry-run')
     return {'Authorization': 'Bearer ' + key}
+
+
+def create_backend(settings):
+    if settings.provider == 'jev':
+        from .jev import JevBackend
+        return JevBackend()
+    if settings.provider == 'microsoft':
+        from .microsoft import MicrosoftBackend
+        return MicrosoftBackend(settings)
+    from .openai import OpenAIBackend
+    return OpenAIBackend(settings)

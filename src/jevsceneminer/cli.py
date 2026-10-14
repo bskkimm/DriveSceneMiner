@@ -18,7 +18,9 @@ from jevsceneminer.inputs.bag import INDICATOR_LEFT, INDICATOR_RIGHT, BagError, 
 from jevsceneminer.scenes.evaluate import score
 from jevsceneminer.evidence.facts import DT_S, build_timeline
 from jevsceneminer.inference.jev import Answer, AnswerCache, JevClassifier, JevError, cache_key, load_labels
-from jevsceneminer.inference.config import PROVIDERS, auth_headers, resolve_settings
+from jevsceneminer.inference.config import PROVIDERS, auth_headers, create_backend, resolve_settings
+from jevsceneminer.inference.engine import DecisionClassifier
+from jevsceneminer.inference.usage import runtime_usage
 from jevsceneminer.evidence.lanes import LaneMap
 from jevsceneminer.inputs.nuplan import read_nuplan
 from jevsceneminer.inputs.nuplan_map import TRAFFIC_SIDE, find_map, load_nuplan_map
@@ -142,6 +144,9 @@ def _prepare(session, lanemap, traffic_side: str, extras: dict, args, out: Path)
             "inference_model": args.model, "preset": getattr(args, 'preset', None),
             "camera_ground_offset_m": getattr(args, 'camera_ground_offset', 0.0),
             "camera_height_reference": getattr(args, 'camera_height_reference', 'raw')}
+    settings = resolve_settings(args)
+    meta.update(inference_provider=settings.provider, inference_model=settings.model,
+                inference_endpoint=settings.endpoint)
     (out / "meta" / f"{sid}.json").write_text(json.dumps(meta))
     for sub in ("tags", "camera"):
         if extras.get(sub):
@@ -170,7 +175,8 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     path = out / 'steps' / f'{sid}.jsonl'
     lines = path.read_text().splitlines(keepends=True)
     rows = [json.loads(line) for line in lines if line.strip()]
-    model = args.model or meta.get('inference_model')
+    settings = resolve_settings(args, meta)
+    model = settings.model
     from_s, to_s = getattr(args, 'from_s', None), getattr(args, 'to_s', None)
     ranged = from_s is not None
     selected = scripts if not ranged else {t: text for t, text in scripts.items()
@@ -182,12 +188,19 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     for row in rows:
         if row['t_ns'] in selected:
             continue
-        if 'lateral' not in row or row.get('cache_key') != cache_key(model, labels, row['script']):
+        if 'lateral' not in row or row.get('cache_key') != cache_key(model, labels, row['script'],
+                provider=settings.provider, endpoint=settings.endpoint):
             raise ValueError('outside range: missing answers or incompatible question/model cache key; classify the full run first')
         answers[row['t_ns']] = Answer(row['lateral'], row['lateral_probs'], row.get('longitudinal'),
-            row.get('longitudinal_probs', {}), row.get('model'), row.get('input_tokens'))
+            row.get('longitudinal_probs', {}), row.get('model'), row.get('input_tokens'),
+            provider=row.get('provider', 'jev'), output_tokens=row.get('output_tokens'))
     started = time.perf_counter()
-    answers.update(JevClassifier(labels, cache, model=model, workers=args.workers).classify(selected))
+    if settings.provider == 'jev':
+        classifier = JevClassifier(labels, cache, model=model, workers=args.workers)
+    else:
+        classifier = DecisionClassifier(labels, cache, model=model, workers=args.workers,
+                                        backend=create_backend(settings))
+    answers.update(classifier.classify(selected))
     inference_seconds = time.perf_counter() - started
     fresh = cache.written_answers
     result = []
@@ -203,7 +216,9 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
         a = answers[t]
         row.update(script=selected[t], lateral=a.lateral, lateral_probs=a.lateral_probs,
             longitudinal=a.longitudinal, longitudinal_probs=a.longitudinal_probs,
-            model=a.model, input_tokens=a.input_tokens, cache_key=cache_key(model, labels, selected[t]))
+            model=a.model, provider=settings.provider, requested_model=model,
+            input_tokens=a.input_tokens, output_tokens=a.output_tokens,
+            cache_key=cache_key(model, labels, selected[t], provider=settings.provider, endpoint=settings.endpoint))
         result.append(json.dumps(row, ensure_ascii=False)+'\n')
     temporary = path.with_suffix('.jsonl.tmp')
     temporary.write_text(''.join(result))
@@ -219,6 +234,7 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     doc = session_document(meta["date"], meta["name"], meta["start_ns"], meta["end_ns"], labels.version,
                            scenes, {
         "name": "jevsceneminer", "version": __version__, "models": models,
+        "provider": settings.provider, "requested_model": model, "endpoint": settings.endpoint,
         "step_s": meta["step_s"], "past_s": meta.get("past_s"), "future_s": meta.get("future_s"),
         "table_step_s": meta.get("table_step_s"),
         "min_scene_s": args.min_scene, "min_phase_s": args.min_phase, "min_prob": args.min_prob,
@@ -227,13 +243,11 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
         "reclassified_samples": len(selected), "classification_range_s": [from_s, to_s] if ranged else None})
     path = write_scenes(out, doc)
     (out / 'runtime').mkdir(exist_ok=True)
-    tokens = sum(a.input_tokens or 0 for a in fresh)
+    usage = runtime_usage(fresh, settings, getattr(args, 'input_price', None), getattr(args, 'output_price', None))
     (out / 'runtime' / f'{sid}.json').write_text(json.dumps(dict(
         inference_seconds=inference_seconds, selected_samples=len(selected), fresh_answers=len(fresh),
-        input_tokens=tokens, estimated_cost_usd=tokens*PRICE_PER_M_INPUT_TOKENS/1e6,
         model=model, range_s=[from_s, to_s] if ranged else None,
-        price_per_million_input_tokens_usd=PRICE_PER_M_INPUT_TOKENS,
-        pricing_source='https://docs.typesafe.ai/models'), indent=2)+'\n')
+        **usage), indent=2)+'\n')
     n_tokens = sum(a.input_tokens or 0 for a in answers.values())
     print(f"  {len(scenes)} scenes -> {path} (models {models}, {n_tokens} input tokens)", flush=True)
 
@@ -266,8 +280,11 @@ def cmd_run(args) -> int:
 
     # Script chars / 4, plus the question definitions sent with every call (measured ~1.4k tokens).
     est_tokens = totals["chars"] / 4 + totals["calls"] * 1400
-    print(f"total: {totals['sessions']} sessions ({totals['skipped']} skipped), {totals['calls']} Jev calls, "
-          f"~{est_tokens / 1e6:.1f}M input tokens, ~${est_tokens / 1e6 * PRICE_PER_M_INPUT_TOKENS:.2f}")
+    rates = runtime_usage([], settings, getattr(args, 'input_price', None), getattr(args, 'output_price', None))
+    rate = rates['price_per_million_input_tokens_usd']
+    cost = f'~${est_tokens / 1e6 * rate:.2f} input cost' if rate is not None else 'cost unknown'
+    print(f"total: {totals['sessions']} sessions ({totals['skipped']} skipped), {totals['calls']} {settings.provider} samples, "
+          f"rough estimate ~{est_tokens / 1e6:.1f}M input tokens, {cost}")
     return 0
 
 
@@ -488,6 +505,8 @@ def main(argv=None) -> int:
         parser.add_argument('--provider', choices=PROVIDERS, default=None,
                             help='decision provider (default: prepared provider, or Jev)')
         parser.add_argument('--endpoint', default=None, help='Microsoft Foundry HTTPS resource endpoint')
+        parser.add_argument('--input-price', type=float, default=None, help='explicit USD per million input tokens')
+        parser.add_argument('--output-price', type=float, default=None, help='explicit USD per million output tokens')
     if preset_args.preset:
         settings = yaml.safe_load((Path(__file__).resolve().parent / 'presets' / f'{preset_args.preset}.yaml').read_text())
         r.set_defaults(**settings)
@@ -496,6 +515,10 @@ def main(argv=None) -> int:
         args.model = None  # A cadence preset must not select a different provider's model.
     if args.command in ('run', 'classify') and args.workers < 1:
         p.error('--workers must be positive')
+    if args.command in ('run', 'classify') and (args.input_price is not None or args.output_price is not None):
+        if args.input_price is None or args.output_price is None or any(
+                not math.isfinite(v) or v < 0 for v in (args.input_price, args.output_price)):
+            p.error('provide both finite nonnegative --input-price and --output-price')
     if args.command in ('run','classify','restitch') and (not math.isfinite(args.maneuver_tail) or args.maneuver_tail < 0):
         p.error('--maneuver-tail must be finite and nonnegative')
     if args.command == "run":
