@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -21,6 +22,7 @@ from jevsceneminer.inference.jev import Answer, AnswerCache, JevClassifier, JevE
 from jevsceneminer.inference.config import PROVIDERS, auth_headers, create_backend, resolve_settings
 from jevsceneminer.inference.engine import DecisionClassifier
 from jevsceneminer.inference.usage import runtime_usage
+from jevsceneminer.inference.runs import fork_run, script_hash
 from jevsceneminer.evidence.lanes import LaneMap
 from jevsceneminer.inputs.nuplan import read_nuplan
 from jevsceneminer.inputs.nuplan_map import TRAFFIC_SIDE, find_map, load_nuplan_map
@@ -184,6 +186,9 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     if not selected:
         print('  no samples in requested range; no files or answers changed', flush=True)
         return
+    if getattr(args, 'cache_only', False) and any(cache.get(cache_key(model, labels, text,
+            provider=settings.provider, endpoint=settings.endpoint)) is None for text in selected.values()):
+        raise ValueError('cache-only: selected samples have missing or incompatible answers; no API requests made')
     answers = {}
     for row in rows:
         if row['t_ns'] in selected:
@@ -235,6 +240,8 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
                            scenes, {
         "name": "jevsceneminer", "version": __version__, "models": models,
         "provider": settings.provider, "requested_model": model, "endpoint": settings.endpoint,
+        "questions_sha256": hashlib.sha256(json.dumps(labels.spec(),sort_keys=True).encode()).hexdigest(),
+        "scripts_sha256": script_hash([{'t_ns':t,'script':text} for t,text in scripts.items()]),
         "step_s": meta["step_s"], "past_s": meta.get("past_s"), "future_s": meta.get("future_s"),
         "table_step_s": meta.get("table_step_s"),
         "min_scene_s": args.min_scene, "min_phase_s": args.min_phase, "min_prob": args.min_prob,
@@ -298,6 +305,9 @@ def cmd_run(args) -> int:
 def cmd_classify(args) -> int:
     """Jev + stitching for every session a `run --dry-run` prepared under <out>."""
     out = Path(args.out)
+    destination = getattr(args, 'result_out', None)
+    if destination and not getattr(args, 'dry_run', False):
+        out = fork_run(out, destination, args, resolve_settings)
     failed = []
     for meta_path in sorted((out / "meta").glob("*.json")):
         meta = json.loads(meta_path.read_text())
@@ -306,7 +316,12 @@ def cmd_classify(args) -> int:
         print(f"{meta['date']} {meta['name']}: {len(rows)} scripts", flush=True)
         scripts = {r["t_ns"]: r["script"] for r in rows}
         settings = resolve_settings(args, meta)
+        if not destination and settings.provider != meta.get('inference_provider','jev') and not args.dry_run:
+            raise ValueError('changing provider requires --out NEW_FOLDER to preserve the original run')
         if getattr(args, 'dry_run', False):
+            if getattr(args,'from_s',None) is not None:
+                scripts = {t:text for t,text in scripts.items()
+                           if meta['start_ns']+round(args.from_s*1e9) <= t < meta['start_ns']+round(args.to_s*1e9)}
             lengths = [len(text) for text in scripts.values()]
             print(f'  dry run: {settings.provider}, model {settings.model or "default"}, '
                   f'{len(scripts)} samples, maximum script {max(lengths, default=0)} characters; no API requests')
@@ -386,6 +401,19 @@ def cmd_view(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    from jevsceneminer.scenes.compare import compare_runs
+    runs = {}
+    for spec in args.run:
+        name, separator, folder = spec.partition('=')
+        if not separator or not name or name in runs or not folder:
+            raise ValueError('--run requires unique NAME=RUN_FOLDER entries')
+        runs[name] = Path(folder)
+    compare_runs(runs, Path(args.out), Path(args.gt) if args.gt else None)
+    print(f'comparison saved to {args.out}')
+    return 0
+
+
 def cmd_benchmark(args) -> int:
     from jevsceneminer.scenes.benchmark import run_benchmark
     try:
@@ -453,6 +481,8 @@ def main(argv=None) -> int:
 
     c = sub.add_parser("classify", help="Jev + scenes for sessions prepared by `run --dry-run`")
     c.add_argument("out", help="the --out folder of `run --dry-run`")
+    c.add_argument('--out', dest='result_out', help='new separate result folder; original evidence is preserved')
+    c.add_argument('--cache-only', action='store_true', help='reuse compatible cached answers; never call an API')
     c.add_argument("--labels", default=str(DEFAULT_LABELS))
     c.add_argument('--from-s', type=float, help='rerun NOWs from this elapsed session time, inclusive; requires --to-s')
     c.add_argument('--to-s', type=float, help='rerun NOWs before this elapsed session time, exclusive')
@@ -494,6 +524,11 @@ def main(argv=None) -> int:
     benchmark.add_argument("manifest", help="jsm-benchmark-1 JSON manifest with explicit sessions and input hashes")
     benchmark.add_argument("--out", required=True, help="folder for deterministic report.json and report.md")
     benchmark.set_defaults(func=cmd_benchmark)
+    compare = sub.add_parser('compare', help='compare saved providers on shared scripts and reviewed GT intervals')
+    compare.add_argument('--run', action='append', required=True, metavar='NAME=RUN_FOLDER')
+    compare.add_argument('--gt', default=None)
+    compare.add_argument('--out', required=True)
+    compare.set_defaults(func=cmd_compare)
 
     v = sub.add_parser("view", help="local review / GT labeling site for a run folder")
     v.add_argument("out", help="an --out folder of `jevsceneminer run`")
@@ -558,7 +593,7 @@ def main(argv=None) -> int:
                 meta = json.loads(first_meta.read_text())
         try:
             settings = resolve_settings(args, meta)
-            if not args.dry_run:
+            if not args.dry_run and not getattr(args,'cache_only',False):
                 auth_headers(settings)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
