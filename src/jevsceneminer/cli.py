@@ -392,7 +392,9 @@ def cmd_view(args) -> int:
 
     out = Path(args.out)
     runs = {}
-    for spec in args.run or ["jev=scenes"]:
+    first_meta = next(iter(sorted((out/'meta').glob('*.json'))), None)
+    provider = json.loads(first_meta.read_text()).get('inference_provider','jev') if first_meta else 'jev'
+    for spec in args.run or [f"{provider}=scenes"]:
         name, _, folder = spec.partition("=")
         path = Path(folder) if Path(folder).is_absolute() else out / folder
         runs[name] = path

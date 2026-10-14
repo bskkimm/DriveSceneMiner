@@ -60,20 +60,38 @@ class Site:
 
     def session(self, sid: str) -> dict:
         meta = _read_json(self.out / "meta" / f"{sid}.json")
-        steps = []
-        path = self.out / "steps" / f"{sid}.jsonl"
-        for line in path.read_text().splitlines() if path.exists() else []:
-            row = json.loads(line)
-            row.pop("script", None)
-            row.pop("facts", None)
-            steps.append(row)
-        runs = {name: _read_json(folder / f"{sid}.json") for name, folder in self.runs.items()}
+        steps = self._steps(self.out / "steps" / f"{sid}.jsonl")
+        runs, run_steps, run_meta = {}, {}, {}
+        for name, folder in self.runs.items():
+            if (folder / 'meta').is_dir():
+                root, scene_folder = folder, folder / 'scenes'
+            elif folder.name == 'scenes' and (folder.parent / 'meta').is_dir():
+                root, scene_folder = folder.parent, folder
+            else:
+                root, scene_folder = None, folder
+            runs[name] = _read_json(scene_folder / f'{sid}.json')
+            run_steps[name] = self._steps(root / 'steps' / f'{sid}.jsonl') if root else []
+            run_meta[name] = _read_json(root / 'meta' / f'{sid}.json', {}) if root else {}
         gt = _read_json(self.gt_dir / f"{sid}.json") if self.gt_dir else None
-        return {"meta": meta, "steps": steps, "runs": runs, "gt": gt,
+        return {"meta": meta, "steps": steps, "runs": runs, "run_steps": run_steps, "run_meta": run_meta, "gt": gt,
                 "gt_writable": self.gt_dir is not None,
                 "tags": _read_json(self.out / "tags" / f"{sid}.json", []),
                 "camera": [t for t, _ in _read_json(self.out / "camera" / f"{sid}.json", [])],
                 "indicator": _read_json(self.out / "indicator" / f"{sid}.json", [])}
+
+    @staticmethod
+    def _steps(path):
+        steps = []
+        if path.exists():
+            with path.open() as stream:
+                for line in stream:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    row.pop('script', None)
+                    row.pop('facts', None)
+                    steps.append(row)
+        return steps
 
     def script(self, sid: str, t_ns: int) -> str:
         path = self.out / "steps" / f"{sid}.jsonl"

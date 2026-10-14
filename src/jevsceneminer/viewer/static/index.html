@@ -99,6 +99,8 @@
 <header>
   <h1>JevSceneMiner</h1>
   <select id="session" aria-label="Session"></select>
+  <select id="resultRun" aria-label="Result provider and model" hidden></select>
+  <span id="resultIdentity"></span>
   <button id="play" title="Space">▶ Play</button>
   <select id="speed" aria-label="Playback speed"><option>1</option><option selected>2</option><option>4</option><option>8</option></select>
   <span id="clock"></span>
@@ -198,10 +200,21 @@ function spansOf(doc, key) {
 }
 const maneuvers = (sp) => sp.filter((s) => s[2] !== "keep_lane");
 const mainRun = () => {
-  const name = S.runs.find(n => S.data?.runs[n]);
+  const name = S.data?.runs[S.selectedRun] ? S.selectedRun : S.runs.find(n => S.data?.runs[n]);
   return name ? [name, S.data.runs[name]] : [S.runs[0] || "jev", null];
 };
-const runLabel = name => name === "jev" ? "Jev" : name;
+const runLabel = name => {
+  const provider=S.data?.run_meta?.[name]?.inference_provider;
+  const titles={jev:'Jev',microsoft:'Microsoft',openai:'OpenAI'};
+  return name==='jev' ? (titles[provider] || 'Jev') : (titles[name] || name);
+};
+const rawStepsFor = name => S.data?.run_steps ? (S.data.run_steps[name] || []) :
+  (name === S.runs[0] ? (S.data?.steps || []) : []);
+const showResultIdentity = () => {
+  const name=mainRun()[0],meta=S.data?.run_meta?.[name] || {};
+  const model=rawStepsFor(name).find(row=>row.model)?.model || meta.inference_model;
+  $('resultIdentity').textContent=runLabel(name)+(model ? ' · '+model : '');
+};
 const htmlText = value => String(value).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const pretty = label => (label || "unlabeled").replaceAll("_", " ");
 const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
@@ -239,12 +252,21 @@ async function load(sid) {
   catch (error) { if (generation === sessionGeneration) status(`Loading failed: ${error.message}`); return; }
   if (generation !== sessionGeneration || sid !== S.sid) return;
   S.data = data; cameraMock=null; cameraOverlayKey=null; $("play").disabled = false;
+  const chooser = $("resultRun"); chooser.replaceChildren();
+  for (const name of S.runs.filter(n => data.runs[n])) {
+    const meta = data.run_meta?.[name] || {};
+    const provider = ({jev:'Jev',microsoft:'Microsoft',openai:'OpenAI'})[meta.inference_provider] || runLabel(name);
+    const model = rawStepsFor(name).find(row => row.model)?.model || meta.inference_model;
+    chooser.add(new Option(`${name} · ${provider}${model ? ' · '+model : ''}`, name));
+  }
+  S.selectedRun = mainRun()[0]; chooser.value = S.selectedRun; chooser.hidden = chooser.options.length < 2;
+  showResultIdentity();
   const m = S.data.meta;
   S.t0 = sec(m.start_ns); S.t1 = sec(m.end_ns);
   S.t = S.t0; S.v0 = S.t0; S.v1 = Math.min(S.t1, S.t0 + 60); S.follow = true;
   $("follow").classList.add("on");
   S.gtScenes = scenesFrom(S.data.gt); syncGt();
-  S.probs = S.data.steps.filter((r) => r.lateral).map((r) => [r.t_ns / 1e9, r.lateral_probs[r.lateral] || 0, r.lateral]);
+  S.probs = rawStepsFor(mainRun()[0]).filter((r) => r.lateral).map((r) => [r.t_ns / 1e9, r.lateral_probs?.[r.lateral] || 0, r.lateral]);
   S.camTimes = S.data.camera.map((t) => t / 1e9);
   $("camnote").textContent = S.camTimes.length ? "" : "No camera frames for this session (pass --sensor-root for nuPlan).";
   $("save").disabled = !S.data.gt_writable;
@@ -719,8 +741,16 @@ function cameraResultsSource() {
     if(!cameraMock)cameraMock=CameraDecisions.mock(S.t0,S.t1,LAT,LON.filter(l=>l!=="unknown"));
     return cameraMock;
   }
-  return {scenes:scenesFrom(mainRun()[1]),steps:S.data.steps};
+  return {scenes:scenesFrom(mainRun()[1]),steps:rawStepsFor(mainRun()[0])};
 }
+$("resultRun").onchange = () => {
+  S.selectedRun = $("resultRun").value;
+  S.probs = rawStepsFor(mainRun()[0]).filter(row => row.lateral).map(row =>
+    [row.t_ns/1e9, row.lateral_probs?.[row.lateral] || 0, row.lateral]);
+  cameraOverlayKey = null;
+  showResultIdentity();
+  drawAll(); renderEvents(); renderEditor();
+};
 function cameraPanel(host,title,rows) {
   const expanded=!!host.querySelector('details')?.open;
   host.replaceChildren();
@@ -743,7 +773,7 @@ function cameraPanel(host,title,rows) {
 function drawCameraResults() {
   const mock=$("showMock").checked,source=cameraResultsSource();
   const t=camIdx>=0 ? S.camTimes[camIdx] : S.t;
-  const key=`${S.sid}:${mock}:${Math.floor(t-S.t0)}:${S.playing?"playing":camIdx}`;
+  const key=`${S.sid}:${mainRun()[0]}:${mock}:${Math.floor(t-S.t0)}:${S.playing?"playing":camIdx}`;
   if(key===cameraOverlayKey)return;cameraOverlayKey=key;
   const v=CameraDecisions.view(source.scenes,source.steps,t);
   $("cameraResults").hidden=!S.data || (!mock && !v.rawLateral.length && !v.rawLongitudinal.length && !v.lateral);

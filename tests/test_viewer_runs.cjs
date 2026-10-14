@@ -50,3 +50,26 @@ test('a missing first run does not hide an available later document',async()=>{
   assert.equal(v.evaluate('mainRun()[0]'),'candidate');
   assert.equal(v.evaluate('cameraResultsSource().scenes.length'),1);
 });
+
+test('selecting a provider switches its scenes and its own raw probabilities',async()=>{
+  const other={scenes:[{start:0,end:4,lateral:'lane_change_right',phases:[]}]};
+  const v=viewer(['jev','microsoft'],{jev:document,microsoft:other});
+  v.context.S.data.run_steps={jev:[{lateral:'turn_right'}],microsoft:[{lateral:'lane_change_right'}]};
+  v.context.S.selectedRun='microsoft';
+  assert.equal(v.evaluate('mainRun()[0]'),'microsoft');
+  assert.equal(v.evaluate('cameraResultsSource().steps[0].lateral'),'lane_change_right');
+  assert.equal(v.evaluate('cameraResultsSource().scenes[0].lateral'),'lane_change_right');
+});
+
+test('a scene-only comparison does not display another models raw answers',async()=>{
+  const v=viewer(['jev','candidate'],{jev:document,candidate:document});
+  v.context.S.data.run_steps={jev:[{lateral:'keep_lane'}],candidate:[]};
+  v.context.S.selectedRun='candidate';
+  assert.equal(v.evaluate('cameraResultsSource().steps.length'),0);
+});
+
+test('a saved non-Jev provider is labeled correctly even through a legacy run name',()=>{
+  const v=viewer(['jev'],{jev:document});
+  v.context.S.data.run_meta={jev:{inference_provider:'microsoft'}};
+  assert.equal(v.evaluate('runLabel("jev")'),'Microsoft');
+});
