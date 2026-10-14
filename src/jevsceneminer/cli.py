@@ -248,6 +248,13 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
         inference_seconds=inference_seconds, selected_samples=len(selected), fresh_answers=len(fresh),
         model=model, range_s=[from_s, to_s] if ranged else None,
         **usage), indent=2)+'\n')
+    meta_path = out / 'meta' / f'{sid}.json'
+    if meta_path.is_file():
+        updated_meta = dict(meta, inference_provider=settings.provider,
+                            inference_model=model, inference_endpoint=settings.endpoint)
+        temporary_meta = meta_path.with_suffix('.json.tmp')
+        temporary_meta.write_text(json.dumps(updated_meta)+'\n')
+        temporary_meta.replace(meta_path)
     n_tokens = sum(a.input_tokens or 0 for a in answers.values())
     print(f"  {len(scenes)} scenes -> {path} (models {models}, {n_tokens} input tokens)", flush=True)
 
