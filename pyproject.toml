@@ -1,7 +1,7 @@
 [project]
 name = "jevsceneminer"
 version = "0.2.0"
-description = "Mine driving scenes from logs with Jev: scene script in, scenarios with probabilities and timestamps out."
+description = "Mine driving scenes from logs with decision models: readable evidence in, timestamped maneuvers out."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"

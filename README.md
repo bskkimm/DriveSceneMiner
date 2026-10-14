@@ -12,8 +12,10 @@
 
 </div>
 
-Mine driving maneuvers from recorded vehicle data with [Jev](https://docs.typesafe.ai/introduction).
+Mine driving maneuvers from recorded vehicle data with [decision models](docs/providers.md).
 Convert motion, lane geometry and object interactions into shared readable evidence, then classify each moment and merge it into timestamped scenes.
+
+[Jev](https://docs.typesafe.ai/introduction) is the default. Microsoft Decision-1 and OpenAI Decisions adapters can reuse the same prepared scripts; their driving-scene results still need live evaluation.
 
 Read the [project write-up on Medium](https://medium.com/@bskkim2022/turning-driving-logs-into-reviewable-scenes-with-jev-77b8c6977e6c) for the motivation, approach and lessons learned.
 
@@ -69,7 +71,7 @@ Use reviewed scene labels for:
 
 ```text
 Autoware MCAP + Lanelet2 ─┐
-                          ├─► preprocess ─► structured sample ─► Jev
+                          ├─► preprocess ─► structured sample ─► model
 nuPlan SQLite + map ──────┘                   facts + script      │
                                                                   ▼
                                                           raw probabilities
@@ -79,7 +81,7 @@ nuPlan SQLite + map ──────┘                   facts + script      
                                                      camera / BEV / timeline / GT
 ```
 
-Jev receives the **readable script**, with past and future observations around NOW.
+The selected model receives the **readable script**, with past and future observations around NOW, and the label definitions.
 Numerical facts remain alongside it for inspection. Camera images are used for review.
 
 ```text
@@ -139,6 +141,7 @@ See [usage](docs/usage.md) for rosbag inputs, options, outputs and remote viewin
 | Guide | Contents |
 | --- | --- |
 | [Usage](docs/usage.md) | Source setup, configuration, outputs and viewer |
+| [Decision providers](docs/providers.md) | Jev, Microsoft and OpenAI setup, separate trials and comparisons |
 | [Adapt your driving data](docs/adapting-private-data.md) | New source adapters, evidence checks and a coding-agent task |
 | [Sample and scene schema](docs/schema.md) | Context, lane/body evidence and consecutive phases |
 | [Evidence review](docs/review.md) | Opt-in annotations, missing actor history and selected reruns |

@@ -1,6 +1,8 @@
 # Run and review your logs
 
 Set `TYPESAFE_API_KEY` in your environment or an ignored `.env` file.
+Jev is the default. See [decision providers](providers.md) to select Microsoft
+Decision-1 or OpenAI Decisions and compare separate runs on identical scripts.
 `--dry-run` prepares inputs without inference; remove it or run `classify` when ready to call the API.
 Download logs, maps and optional images separately under their source terms. No driving dataset is included.
 

@@ -2,7 +2,7 @@
 
 JevSceneMiner converts recorded driving data into shared numerical facts and a
 readable script, classifies the maneuver active at NOW, and merges timestamped
-decisions into scenes. Only the script is sent to Jev.
+decisions into scenes. Only the script and label questions go to the selected provider.
 
 ## Find the relevant guide
 
@@ -14,6 +14,8 @@ decisions into scenes. Only the script is sent to Jev.
   conversions; continue independent work.
 - Use [schema.md](docs/schema.md) as the sample/scene specification and
   [architecture.md](docs/architecture.md) for implementation locations.
+- For inference changes, read [providers.md](docs/providers.md). Preserve Jev
+  compatibility and isolate caches/results by provider and endpoint.
 
 ## Preserve evidence and compatibility
 
@@ -31,11 +33,11 @@ decisions into scenes. Only the script is sent to Jev.
 
 ## Verify the change
 
-After `uv sync --frozen`, run checks relevant to the change:
+After `uv sync --frozen --extra decisions`, run checks relevant to the change:
 
 ```bash
 uv run pre-commit run --all-files
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --extra decisions pytest
 for file in tests/test_*.cjs; do node "$file" || exit 1; done
 ```
 

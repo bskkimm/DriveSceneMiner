@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add selectable Jev, Microsoft Foundry Decision-1 and OpenAI Decisions text adapters with shared evidence and validated probability results.
+- Preserve legacy Jev caches; record provider/deployment/model provenance and explicit usage/pricing.
+- Add separate bounded trial outputs, cache-only references and offline reviewed-interval comparison reports.
+- Select the active provider's raw probabilities and merged scenes together in the viewer.
+- Alternative providers are tested without API calls; live accuracy and performance remain unmeasured.
+
 - Keep labels in `configs/` and project guides in `docs/`; preserve packaged label resources and CLI defaults.
 - Add an API-free, hash-locked saved-result benchmark with complete coverage checks and a clearly synthetic boundary example.
 - Keep time-agreement samples inside their assessed interval; identical 0.55 s/1.55 s intervals no longer incur a false missing-label penalty at the end.

@@ -8,7 +8,7 @@ JevSceneMiner/
 ├── src/jevsceneminer/
 │   ├── inputs/         Rosbag, nuPlan and native-map adapters
 │   ├── evidence/       Motion, lane/body and object evidence; input scripts
-│   ├── inference/      Jev questions, client and answer cache
+│   ├── inference/      Shared questions/cache, Jev/Microsoft/OpenAI adapters and run forks
 │   ├── scenes/         Lateral merging, speed phases, rules and evaluation
 │   ├── viewer/         Server and camera/height projection
 │   │   └── static/     HTML and browser geometry/editor helpers

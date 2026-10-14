@@ -8,16 +8,18 @@ Discuss major schema or label-policy changes in an issue first.
 Linux with Python 3.10 or 3.11 and Node.js 22 is tested in CI.
 
 ```bash
-uv sync --frozen
+uv sync --frozen --extra decisions
 uv run pre-commit install
 uv run pre-commit run --all-files
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --extra decisions pytest
 for file in tests/test_*.cjs; do node "$file"; done
 uv build --wheel
 ```
 
 Disabling automatic pytest plugin loading avoids unrelated ROS workspace plugins.
 Tests and synthetic demos do not require an API key and must not make paid API calls.
+Alternative-provider tests use in-memory HTTP transports. The test suite blocks
+external socket connections; live provider evaluation is a separate user action.
 CI also installs a wheel into a separate environment and checks packaged labels, preset and viewer files.
 
 Implementation lives in `src/jevsceneminer/`; use its grouped modules for new code.

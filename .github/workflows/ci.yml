@@ -3,7 +3,7 @@ name: Quality checks
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'feat/**']
 
 permissions:
   contents: read
@@ -29,9 +29,9 @@ jobs:
         with:
           node-version: '22'
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
-      - run: uv sync --frozen --python '${{ matrix.python }}'
+      - run: uv sync --frozen --extra decisions --python '${{ matrix.python }}'
       - run: uv run --frozen pre-commit run --all-files --show-diff-on-failure
-      - run: uv run --frozen pytest
+      - run: uv run --frozen --extra decisions pytest
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       - name: Viewer JavaScript

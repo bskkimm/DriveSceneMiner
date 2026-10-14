@@ -31,8 +31,10 @@ Every `steps/<session>.jsonl` row has:
 | `lateral`, `longitudinal` | Raw winners, after classification |
 | `lateral_probs`, `longitudinal_probs` | Raw distributions |
 | `model`, `input_tokens`, `cache_key` | Answer provenance |
+| `provider`, `requested_model`, `output_tokens` | Provider, requested model/deployment and optional output usage; absent in legacy Jev rows |
 
-Facts and readable sections share measurements. Only the script goes to Jev.
+Facts and readable sections share measurements. The script and question definitions
+go to the selected provider; numerical facts and camera images stay local.
 The [complete synthetic sample](../examples/sample.json) includes both representations and illustrative answers.
 
 ## Geometry
@@ -80,6 +82,8 @@ Scene documents use decimal strings for nanoseconds to preserve browser precisio
 See [generated scenes](../examples/scenes.json) for the session envelope and configuration.
 
 Raw answers cover half an inference step either side of NOW, clipped to recording limits.
+Alternative providers use the same scene contract. Fresh-output bounded trials
+contain only selected NOWs and do not assign labels outside observed inference cells.
 Merging smooths short lateral runs, demotes insufficient mean support and independently smooths speed phases.
 At 1 Hz with a 2 s minimum, a two-step keep-lane interruption can survive; a one-step interruption can be smoothed.
 Gaps split sequences.
