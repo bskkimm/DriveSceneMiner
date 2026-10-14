@@ -19,6 +19,9 @@ dependencies = [
 [project.scripts]
 jevsceneminer = "jevsceneminer.cli:main"
 
+[project.optional-dependencies]
+decisions = ["httpx>=0.28,<1"]
+
 [dependency-groups]
 dev = ["pytest>=8", "pre-commit>=4.3", "ruff>=0.14"]
 

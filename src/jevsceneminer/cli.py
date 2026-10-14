@@ -18,6 +18,7 @@ from jevsceneminer.inputs.bag import INDICATOR_LEFT, INDICATOR_RIGHT, BagError, 
 from jevsceneminer.scenes.evaluate import score
 from jevsceneminer.evidence.facts import DT_S, build_timeline
 from jevsceneminer.inference.jev import Answer, AnswerCache, JevClassifier, JevError, cache_key, load_labels
+from jevsceneminer.inference.config import PROVIDERS, auth_headers, resolve_settings
 from jevsceneminer.evidence.lanes import LaneMap
 from jevsceneminer.inputs.nuplan import read_nuplan
 from jevsceneminer.inputs.nuplan_map import TRAFFIC_SIDE, find_map, load_nuplan_map
@@ -238,6 +239,8 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
 
 
 def cmd_run(args) -> int:
+    settings = resolve_settings(args)
+    args.provider, args.model, args.endpoint = settings.provider, settings.model, settings.endpoint
     out = Path(args.out)
     maps: dict = {}
     totals = {"calls": 0, "chars": 0, "sessions": 0, "skipped": 0}
@@ -278,6 +281,12 @@ def cmd_classify(args) -> int:
         rows = [json.loads(line) for line in (out / "steps" / f"{sid}.jsonl").read_text().splitlines() if line.strip()]
         print(f"{meta['date']} {meta['name']}: {len(rows)} scripts", flush=True)
         scripts = {r["t_ns"]: r["script"] for r in rows}
+        settings = resolve_settings(args, meta)
+        if getattr(args, 'dry_run', False):
+            lengths = [len(text) for text in scripts.values()]
+            print(f'  dry run: {settings.provider}, model {settings.model or "default"}, '
+                  f'{len(scripts)} samples, maximum script {max(lengths, default=0)} characters; no API requests')
+            continue
         if args.strip_map:
             scripts = {r["t_ns"]: strip_map(r["script"],r.get("facts",{}).get("map_free_object_script")) for r in rows}
         try:
@@ -434,6 +443,7 @@ def main(argv=None) -> int:
                    help="remove every map-derived fact from the scripts first (no-map ablation)")
     c.add_argument("--workers", type=int, default=8)
     c.add_argument("--model", default=None)
+    c.add_argument('--dry-run', action='store_true', help='inspect provider configuration without API calls')
     c.set_defaults(func=cmd_classify)
 
     t = sub.add_parser("restitch", help="rebuild scenes from saved answers with other settings (no Jev calls)")
@@ -474,10 +484,18 @@ def main(argv=None) -> int:
     for parser in (r,c,t):
         parser.add_argument('--maneuver-tail', type=float, default=0.0,
                             help='extend maneuver ends into following keep_lane by at most this many seconds')
+    for parser in (r, c):
+        parser.add_argument('--provider', choices=PROVIDERS, default=None,
+                            help='decision provider (default: prepared provider, or Jev)')
+        parser.add_argument('--endpoint', default=None, help='Microsoft Foundry HTTPS resource endpoint')
     if preset_args.preset:
         settings = yaml.safe_load((Path(__file__).resolve().parent / 'presets' / f'{preset_args.preset}.yaml').read_text())
         r.set_defaults(**settings)
     args = p.parse_args(argv)
+    if args.command == 'run' and args.provider not in (None, 'jev') and '--model' not in argv:
+        args.model = None  # A cadence preset must not select a different provider's model.
+    if args.command in ('run', 'classify') and args.workers < 1:
+        p.error('--workers must be positive')
     if args.command in ('run','classify','restitch') and (not math.isfinite(args.maneuver_tail) or args.maneuver_tail < 0):
         p.error('--maneuver-tail must be finite and nonnegative')
     if args.command == "run":
@@ -502,10 +520,19 @@ def main(argv=None) -> int:
             p.error('provide finite --from-s and --to-s together with 0 <= from < to')
         if a is not None and args.strip_map:
             p.error('--strip-map requires a full run, so questions/state stay consistent outside the range')
-    needs_key = (args.command == "run" and not args.dry_run) or args.command == "classify"
-    if needs_key and not os.environ.get("TYPESAFE_API_KEY"):
-        print("TYPESAFE_API_KEY is not set (put it in .env), or use --dry-run", file=sys.stderr)
-        return 2
+    if args.command in ('run', 'classify'):
+        meta = {}
+        if args.command == 'classify':
+            first_meta = next(iter(sorted((Path(args.out) / 'meta').glob('*.json'))), None)
+            if first_meta:
+                meta = json.loads(first_meta.read_text())
+        try:
+            settings = resolve_settings(args, meta)
+            if not args.dry_run:
+                auth_headers(settings)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     return args.func(args)
 
 
