@@ -1,10 +1,11 @@
 """Shared decision contracts and resumable classification, without network access."""
 import asyncio
+import json
 
 import pytest
 
 from jevsceneminer.inference import jev
-from test_jev import LABELS
+from test_jev import LABELS, FakeClient
 
 
 def test_questions_are_plain_data_with_unchanged_definitions():
@@ -69,3 +70,49 @@ def test_provider_and_endpoint_caches_do_not_collide():
     assert microsoft != original
     assert microsoft != jev.cache_key('same', LABELS, 'script', provider='openai', endpoint='https://one.test')
     assert microsoft != jev.cache_key('same', LABELS, 'script', provider='microsoft', endpoint='https://two.test')
+
+
+def test_jev_classifier_fetches_new_scripts_after_closing_its_previous_client(tmp_path):
+    clients = []
+
+    class Client(FakeClient):
+        closed = False
+
+        async def system_one(self, *args, **kwargs):
+            if self.closed:
+                raise RuntimeError('closed')
+            return await super().system_one(*args, **kwargs)
+
+        async def aclose(self):
+            self.closed = True
+
+    def factory():
+        client = Client()
+        clients.append(client)
+        return client
+
+    classifier = jev.JevClassifier(LABELS, jev.AnswerCache(tmp_path/'cache.jsonl'),
+                                   client_factory=factory, log=lambda _: None)
+    first = classifier.classify({1: 'first script'})
+    second = classifier.classify({2: 'new script'})
+    assert first[1].lateral == second[2].lateral == 'keep_lane'
+    assert len(clients) == 2 and all(client.closed for client in clients)
+
+
+def test_legacy_jev_cache_is_reused_without_constructing_a_client(tmp_path):
+    # Golden key and answer shape from before the shared-contract extraction.
+    key = '4c9dc574214dc6b2119ad5b996eb575b1399c35344890671a146e1b2526ba923'
+    path = tmp_path/'legacy.jsonl'
+    path.write_text(json.dumps({'key': key, 'answer': {
+        'lateral': 'keep_lane', 'lateral_probs': {'keep_lane': 1.},
+        'longitudinal': 'cruising', 'longitudinal_probs': {'cruising': 1.},
+        'model': 'jev-test', 'input_tokens': 100}}) + '\n')
+
+    def forbidden():
+        pytest.fail('a compatible cache hit must not construct an API client')
+
+    assert jev.cache_key(None, LABELS, 'legacy script') == key
+    result = jev.JevClassifier(LABELS, jev.AnswerCache(path), client_factory=forbidden,
+                               log=lambda _: None).classify({7: 'legacy script'})
+    assert result[7].lateral == 'keep_lane' and result[7].provider == 'jev'
+    assert result[7].model == 'jev-test' and result[7].input_tokens == 100

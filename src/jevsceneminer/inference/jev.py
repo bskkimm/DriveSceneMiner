@@ -40,8 +40,11 @@ class JevBackend:
 
     async def aclose(self):
         close = getattr(self._client, "aclose", None)
-        if close is not None:
-            await close()
+        try:
+            if close is not None:
+                await close()
+        finally:
+            self._client = None
 
 
 class JevClassifier(DecisionClassifier):

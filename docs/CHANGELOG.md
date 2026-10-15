@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Share question/answer contracts and resumable inference while retaining Jev's existing CLI, imports and cache keys.
+- Release and reset Jev clients between inference batches; block external API connections in tests.
 - Keep labels in `configs/` and project guides in `docs/`; preserve packaged label resources and CLI defaults.
 - Add an API-free, hash-locked saved-result benchmark with complete coverage checks and a clearly synthetic boundary example.
 - Keep time-agreement samples inside their assessed interval; identical 0.55 s/1.55 s intervals no longer incur a false missing-label penalty at the end.
