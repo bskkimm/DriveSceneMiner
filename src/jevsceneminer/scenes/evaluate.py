@@ -215,7 +215,7 @@ def score_against_tags(tags: dict, run: dict) -> dict:
 
 
 def render_markdown(report: dict) -> str:
-    lines = ["# JevSceneMiner report", ""]
+    lines = ["# DriveSceneMiner report", ""]
     runs = report["runs"]
     if report.get("tags"):
         lines += ["## nuPlan scenario tags (rough check, not GT)", "",

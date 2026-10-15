@@ -4,7 +4,7 @@ Implementation lives under `src/`, separate from tests, examples and documentati
 Local datasets, outputs, API keys and internal notes remain ignored.
 
 ```text
-JevSceneMiner/
+DriveSceneMiner/
 ├── src/jevsceneminer/
 │   ├── inputs/         Rosbag, nuPlan and native-map adapters
 │   ├── evidence/       Motion, lane/body and object evidence; input scripts

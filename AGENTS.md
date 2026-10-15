@@ -1,6 +1,6 @@
-# Working on JevSceneMiner
+# Working on DriveSceneMiner
 
-JevSceneMiner converts recorded driving data into shared numerical facts and a
+DriveSceneMiner converts recorded driving data into shared numerical facts and a
 readable script, classifies the maneuver active at NOW, and merges timestamped
 decisions into scenes. Only the script is sent to Jev.
 
