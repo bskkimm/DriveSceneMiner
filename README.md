@@ -1,10 +1,10 @@
 <div align="center">
 
-# JevSceneMiner
+# DriveSceneMiner
 
 **From driving logs to reviewable scenes.**
 
-[![Quality checks](https://github.com/bskkimm/JevSceneMiner/actions/workflows/ci.yml/badge.svg)](https://github.com/bskkimm/JevSceneMiner/actions/workflows/ci.yml)
+[![Quality checks](https://github.com/bskkimm/DriveSceneMiner/actions/workflows/ci.yml/badge.svg)](https://github.com/bskkimm/DriveSceneMiner/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
@@ -12,8 +12,12 @@
 
 </div>
 
-Mine driving maneuvers from recorded vehicle data with [Jev](https://docs.typesafe.ai/introduction).
+Mine driving maneuvers from recorded vehicle data.
 Convert motion, lane geometry and object interactions into shared readable evidence, then classify each moment and merge it into timestamped scenes.
+
+The current inference backend is [Jev](https://docs.typesafe.ai/introduction).
+DriveSceneMiner was previously named JevSceneMiner; the Python package and CLI
+remain `jevsceneminer` for compatibility.
 
 Read the [project write-up on Medium](https://medium.com/@bskkim2022/turning-driving-logs-into-reviewable-scenes-with-jev-77b8c6977e6c) for the motivation, approach and lessons learned.
 
@@ -39,7 +43,7 @@ https://github.com/user-attachments/assets/4b97b6ed-595d-4b18-beac-87b1e636cca4
 - **Complete maneuvers.** One lateral scene contains consecutive speed phases, such as decelerating, cruising and accelerating.
 - **Evidence review.** Synchronized camera, bird's-eye view (BEV), timeline, raw probabilities and ground-truth editing.
 
-## Why Jev
+## Recorded Jev performance
 
 | Benefit | Detail |
 | --- | --- |
@@ -63,7 +67,7 @@ Use reviewed scene labels for:
 
 ## Roadmap
 
-**Hybrid Jev + rule-based reasoning (planned):** combine model probabilities with motion, map and temporal checks to improve accuracy and consistency. Measure gains against independent, held-out ground truth.
+**Hybrid model + rule-based reasoning (planned):** combine model probabilities with motion, map and temporal checks to improve accuracy and consistency. Measure gains against independent, held-out ground truth.
 
 ## Pipeline
 
@@ -105,8 +109,8 @@ Linux · Python 3.10+ · [uv](https://docs.astral.sh/uv/getting-started/installa
 Try the complete synthetic pipeline **without an API key**:
 
 ```bash
-git clone https://github.com/bskkimm/JevSceneMiner.git
-cd JevSceneMiner
+git clone https://github.com/bskkimm/DriveSceneMiner.git
+cd DriveSceneMiner
 uv sync --frozen
 uv run python examples/pipeline_demo.py --source rosbag --out out/demo
 uv run jevsceneminer view out/demo --gt out/demo-gt --port 8650

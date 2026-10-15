@@ -172,7 +172,7 @@ questions or model settings must not reuse incompatible cached answers.
 Replace the bracketed paths and source description before using this prompt:
 
 ```text
-Adapt JevSceneMiner to [describe my recording format].
+Adapt DriveSceneMiner to [describe my recording format].
 Representative data: [path I authorize you to inspect]
 Source documentation: [path or reference]
 Fresh output directory: [path outside tracked files]

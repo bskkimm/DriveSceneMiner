@@ -162,7 +162,7 @@ def run_benchmark(manifest_path: Path, out: Path) -> dict:
               f"Evaluation kind: **{manifest['kind']}**. {manifest['provenance']}\n\n"
               "Synthetic or development scores do not measure held-out Jev accuracy.\n\n"
               f"Manifest SHA-256: `{report['manifest_sha256']}`. Input hashes and run settings are in `report.json`.\n\n")
-    markdown = header + evaluate.render_markdown(report).removeprefix("# JevSceneMiner report\n\n")
+    markdown = header + evaluate.render_markdown(report).removeprefix("# DriveSceneMiner report\n\n")
     out.mkdir(parents=True, exist_ok=True)
     _atomic_write(out / "report.json", json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n")
     _atomic_write(out / "report.md", markdown)

@@ -1,7 +1,7 @@
 [project]
 name = "jevsceneminer"
 version = "0.2.0"
-description = "Mine driving scenes from logs with Jev: scene script in, scenarios with probabilities and timestamps out."
+description = "DriveSceneMiner: turn driving logs into timestamped maneuver labels."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -18,6 +18,11 @@ dependencies = [
 
 [project.scripts]
 jevsceneminer = "jevsceneminer.cli:main"
+
+[project.urls]
+Repository = "https://github.com/bskkimm/DriveSceneMiner"
+Documentation = "https://github.com/bskkimm/DriveSceneMiner#readme"
+Issues = "https://github.com/bskkimm/DriveSceneMiner/issues"
 
 [dependency-groups]
 dev = ["pytest>=8", "pre-commit>=4.3", "ruff>=0.14"]

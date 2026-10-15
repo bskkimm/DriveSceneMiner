@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rename the project and repository to DriveSceneMiner; retain the `jevsceneminer` package, CLI and saved-data identifiers for compatibility.
 - Share question/answer contracts and resumable inference while retaining Jev's existing CLI, imports and cache keys.
 - Release and reset Jev clients between inference batches; block external API connections in tests.
 - Keep labels in `configs/` and project guides in `docs/`; preserve packaged label resources and CLI defaults.
