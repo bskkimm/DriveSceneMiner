@@ -39,6 +39,10 @@ There are no duplicate implementations: source types and patches retain their id
 `jevsceneminer.scenes` keeps its original merge API, and `jevsceneminer.viewer` keeps its server API, including explicit `PAGE` overrides.
 The older `python -m jevsceneminer.compact` entry point remains usable.
 
+Within `inference/`, `contracts.py` holds questions, answers and cache identity;
+`engine.py` handles concurrent requests and resuming saved answers. `jev.py`
+keeps the existing Jev interface and SDK behavior.
+
 The CLI, data schemas, exact questions, cache keys and merge behavior are unchanged by this move.
 Labels, presets and browser assets are checked after installing a wheel outside the source checkout.
 Both synthetic adapters are also compared before and after migration.

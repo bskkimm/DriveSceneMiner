@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import ipaddress
+import socket
 
 import numpy as np
 import pytest
@@ -10,6 +12,22 @@ import pytest
 from jevsceneminer import lanes as lanes_mod
 from jevsceneminer.bag import INDICATOR_OFF, INDICATOR_RIGHT, DetectedObject, EgoTrack, Session
 
+
+@pytest.fixture(autouse=True)
+def block_external_network(monkeypatch):
+    """Real external HTTP must never turn a synthetic test into paid inference."""
+    for method in ('connect', 'connect_ex'):
+        original = getattr(socket.socket, method)
+        def guarded(sock, address, original=original):
+            if sock.family in (socket.AF_INET, socket.AF_INET6):
+                try:
+                    local = ipaddress.ip_address(address[0]).is_loopback
+                except ValueError:
+                    local = False
+                if not local:
+                    raise AssertionError('External network is blocked in tests; use a mock transport')
+            return original(sock, address)
+        monkeypatch.setattr(socket.socket, method, guarded)
 # Three lanes, driving direction +x (left = +y):
 #   A (id 10): y 0..3.5,  x 0..50      C (id 12) follows A: x 50..100
 #   B (id 11): y -3.5..0, x 0..50      A and B share the dashed line y = 0

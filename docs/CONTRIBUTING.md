@@ -18,6 +18,8 @@ uv build --wheel
 
 Disabling automatic pytest plugin loading avoids unrelated ROS workspace plugins.
 Tests and synthetic demos do not require an API key and must not make paid API calls.
+The test suite blocks outbound TCP connections. Numeric loopback addresses and
+Unix sockets remain available for local tests; external services need test doubles.
 CI also installs a wheel into a separate environment and checks packaged labels, preset and viewer files.
 
 Implementation lives in `src/jevsceneminer/`; use its grouped modules for new code.
