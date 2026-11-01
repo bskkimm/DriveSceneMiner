@@ -22,6 +22,7 @@ from jevsceneminer.evidence.lanes import LaneMap
 from jevsceneminer.inputs.nuplan import read_nuplan
 from jevsceneminer.inputs.nuplan_map import TRAFFIC_SIDE, find_map, load_nuplan_map
 from jevsceneminer.scenes.rules import rule_scenes
+from jevsceneminer.scenes.hybrid import turn_overrides
 from jevsceneminer.scenes.merge import Step, session_document, stitch, write_scenes, extend_maneuver_ends
 from jevsceneminer.evidence.script import SAMPLE_SCHEMA_VERSION, TABLE_STEP_S, render_sample, strip_map
 
@@ -211,13 +212,16 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     if args.require_indicator:
         indicator = json.loads((out / "indicator" / f"{sid}.json").read_text())
     steps = [Step(t, answers[t]) for t in scripts]
+    overrides, hybrid = turn_overrides([json.loads(line) for line in result if line.strip()], meta['step_s'], args.min_prob) if getattr(args,'hybrid_turns',False) else ({}, None)
     scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"], args.min_prob,
-                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase)
-    scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []))
+                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase, lateral_overrides=overrides)
+    scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
+                                 exclude_labels=('turn_left','turn_right') if hybrid else ())
     models = sorted({a.model for a in answers.values() if a.model})
     doc = session_document(meta["date"], meta["name"], meta["start_ns"], meta["end_ns"], labels.version,
                            scenes, {
         "name": "jevsceneminer", "version": __version__, "models": models,
+        "hybrid_turns": hybrid,
         "step_s": meta["step_s"], "past_s": meta.get("past_s"), "future_s": meta.get("future_s"),
         "table_step_s": meta.get("table_step_s"),
         "min_scene_s": args.min_scene, "min_phase_s": args.min_phase, "min_prob": args.min_prob,
@@ -308,10 +312,14 @@ def cmd_restitch(args) -> int:
         indicator = None
         if args.require_indicator:
             indicator = json.loads((src / "indicator" / f"{sid}.json").read_text())
+        overrides, hybrid = turn_overrides(rows,meta['step_s'],args.min_prob) if getattr(args,'hybrid_turns',False) else ({},None)
         scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"],
-                        args.min_prob, indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase)
-        scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []))
+                        args.min_prob, indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase,
+                        lateral_overrides=overrides)
+        scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
+                                     exclude_labels=('turn_left','turn_right') if hybrid else ())
         generator.update(min_scene_s=args.min_scene, min_phase_s=args.min_phase, min_prob=args.min_prob,
+                         hybrid_turns=hybrid,
                          maneuver_tail_s=args.maneuver_tail,
                          require_indicator=args.require_indicator, restitched_from=str(src))
         write_scenes(dst, session_document(meta["date"], meta["name"], meta["start_ns"], meta["end_ns"],
@@ -472,6 +480,8 @@ def main(argv=None) -> int:
     v.set_defaults(func=cmd_view)
 
     for parser in (r,c,t):
+        parser.add_argument('--hybrid-turns', action='store_true',
+                            help='conservative model/map/motion turn corrections; preserve raw probabilities')
         parser.add_argument('--maneuver-tail', type=float, default=0.0,
                             help='extend maneuver ends into following keep_lane by at most this many seconds')
     if preset_args.preset:

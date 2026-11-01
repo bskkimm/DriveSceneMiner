@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add experimental opt-in `--hybrid-turns` for model/map/motion left/right-turn corrections with audit metadata and unchanged raw evidence; available offline through `restitch`.
 - Rename the project and repository to DriveSceneMiner; retain the `jevsceneminer` package, CLI and saved-data identifiers for compatibility.
 - Share question/answer contracts and resumable inference while retaining Jev's existing CLI, imports and cache keys.
 - Release and reset Jev clients between inference batches; block external API connections in tests.
