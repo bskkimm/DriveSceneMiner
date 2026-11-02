@@ -26,12 +26,15 @@ unchanged. The readable script is never parsed to infer missing measurements.
    observation. Every intersecting observation must have the matching mapped turn
    direction. If so, assign the turn throughout that rotation bout.
 5. If the same complete rotation bout is entirely on matched non-intersection
-   road, change its raw turn observations to `keep_lane`.
+   road, assign `keep_lane` across the whole bout, including any turn labels that
+   smoothing introduced at originally keep-lane observations.
 
 Missing map matches, unknown/contradictory connector directions, truncated bouts,
 U-turn-sized rotation and unsupported model decisions cause abstention. A missing
 intersection is not assumed to be a road. No lane IDs, polygon shares or indicator
 state alone establish a turn. Existing optional indicator gating still applies.
+Malformed fact containers and non-boolean map occupancy remain unknown. Invalid
+model probabilities cannot provide turn support.
 
 ```text
 NOW:         0  1  2  3  4  5  6  7
