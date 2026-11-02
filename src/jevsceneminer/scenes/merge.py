@@ -130,7 +130,7 @@ def gate_by_indicator(steps: list[Step], lat: list[str], segments: list, step_s:
 
 def stitch(steps: list[Step], step_s: float, min_scene_s: float, start_ns: int, end_ns: int,
            min_prob: float = 0.0, indicator: list | None = None, needs: dict[str, int] | None = None,
-           min_phase_s: float = 1.0) -> list[Scene]:
+           min_phase_s: float = 1.0, lateral_overrides: dict[int, str] | None = None) -> list[Scene]:
     min_len = max(1, int(round(min_scene_s / step_s)))
     phase_min_len = max(1, int(round(min_phase_s / step_s)))
     half = int(step_s * 1e9 / 2)
@@ -139,6 +139,8 @@ def stitch(steps: list[Step], step_s: float, min_scene_s: float, start_ns: int, 
         lat = smooth_runs([s.answer.lateral for s in seg], min_len)
         if min_prob > 0:
             lat = demote_unsure(seg, lat, min_prob)
+        if lateral_overrides:
+            lat = [lateral_overrides.get(step.t_ns, label) for step,label in zip(seg,lat)]
         if indicator is not None:
             lat = gate_by_indicator(seg, lat, indicator, step_s, needs or {})
         lon = [s.answer.longitudinal or "unknown" for s in seg]
@@ -190,7 +192,7 @@ def stitch(steps: list[Step], step_s: float, min_scene_s: float, start_ns: int, 
     return scenes
 
 
-def extend_maneuver_ends(scenes, tail_s, protected_intervals=()):
+def extend_maneuver_ends(scenes, tail_s, protected_intervals=(), *, exclude_labels=()):
     """Borrow up to ``tail_s`` from an immediately following keep_lane scene.
 
     Never bridge a gap or enter protected lane-review intervals. Longitudinal
@@ -226,7 +228,7 @@ def extend_maneuver_ends(scenes, tail_s, protected_intervals=()):
 
     for i,scene in enumerate(work[:-1]):
         following = work[i+1]
-        if scene is None or following is None or scene.lateral in ('keep_lane','unknown','unlabeled') or following.lateral != 'keep_lane':
+        if scene is None or following is None or scene.lateral in ('keep_lane','unknown','unlabeled') or scene.lateral in exclude_labels or following.lateral != 'keep_lane':
             continue
         if scene.end_ns != following.start_ns:
             continue

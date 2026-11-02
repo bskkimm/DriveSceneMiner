@@ -67,7 +67,7 @@ Use reviewed scene labels for:
 
 ## Roadmap
 
-**Hybrid model + rule-based reasoning (planned):** combine model probabilities with motion, map and temporal checks to improve accuracy and consistency. Measure gains against independent, held-out ground truth.
+**Hybrid model + rule-based reasoning:** an opt-in [experimental left/right-turn rule](docs/hybrid-turns.md) combines model, mapped-intersection and rotation evidence. Broader hybrid reasoning is planned; accuracy gains require independent, held-out ground truth.
 
 ## Pipeline
 
