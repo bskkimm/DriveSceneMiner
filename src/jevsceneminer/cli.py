@@ -171,7 +171,9 @@ def _hybrid_overrides(rows, step_s, args):
     combined={t:label for t,label in {**turns,**lanes}.items() if t not in conflicts}
     for audit in (turn_audit,lane_audit):
         if audit is not None:audit['conflicting_samples']=len(conflicts)
-    return combined,turn_audit,lane_audit
+    scopes={t:('lane_change_left','lane_change_right') if label=='keep_lane' else ('keep_lane',label)
+            for t,label in lanes.items() if t in combined}
+    return combined,turn_audit,lane_audit,scopes
 
 
 def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
@@ -223,9 +225,10 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     if args.require_indicator:
         indicator = json.loads((out / "indicator" / f"{sid}.json").read_text())
     steps = [Step(t, answers[t]) for t in scripts]
-    overrides, hybrid, hybrid_lanes = _hybrid_overrides([json.loads(line) for line in result if line.strip()],meta['step_s'],args)
+    overrides, hybrid, hybrid_lanes, scopes = _hybrid_overrides([json.loads(line) for line in result if line.strip()],meta['step_s'],args)
     scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"], args.min_prob,
-                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase, lateral_overrides=overrides)
+                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase, lateral_overrides=overrides,
+                    lateral_override_scopes=scopes)
     scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
                                  exclude_labels=(('turn_left','turn_right') if hybrid else ()) + (('lane_change_left','lane_change_right') if hybrid_lanes else ()))
     models = sorted({a.model for a in answers.values() if a.model})
@@ -324,10 +327,10 @@ def cmd_restitch(args) -> int:
         indicator = None
         if args.require_indicator:
             indicator = json.loads((src / "indicator" / f"{sid}.json").read_text())
-        overrides, hybrid, hybrid_lanes = _hybrid_overrides(rows,meta['step_s'],args)
+        overrides, hybrid, hybrid_lanes, scopes = _hybrid_overrides(rows,meta['step_s'],args)
         scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"],
                         args.min_prob, indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase,
-                        lateral_overrides=overrides)
+                        lateral_overrides=overrides,lateral_override_scopes=scopes)
         scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
                                      exclude_labels=(('turn_left','turn_right') if hybrid else ()) + (('lane_change_left','lane_change_right') if hybrid_lanes else ()))
         generator.update(min_scene_s=args.min_scene, min_phase_s=args.min_phase, min_prob=args.min_prob,

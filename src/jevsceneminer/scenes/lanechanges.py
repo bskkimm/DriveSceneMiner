@@ -37,7 +37,8 @@ def _context(row):
         return lid
     for lid,lane in by_id.items():
         following=lane.get('following')
-        if not isinstance(following,list):return None
+        if not isinstance(following,list) or any(not isinstance(f,dict) or not lane_id(f.get('id')) for f in following):return None
+        if any(lane.get(side) is not None and not lane_id(lane[side]) for side in ('left_neighbor_id','right_neighbor_id')):return None
         if len(following)==1 and isinstance(following[0],dict):
             successor=following[0].get('id'); target=by_id.get(successor) if lane_id(successor) else None
             if (target and target.get('previous_ids')==[lid] and lane.get('intersection') is False

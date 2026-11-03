@@ -127,7 +127,7 @@ def test_rule_disagreement_abstains_instead_of_selecting_priority(monkeypatch):
     from jevsceneminer import cli
     monkeypatch.setattr(cli,'turn_overrides',lambda *args:({1:'turn_right'},{}))
     monkeypatch.setattr(cli,'lanechange_overrides',lambda *args:({1:'lane_change_right'},{}))
-    overrides,turn,lane=cli._hybrid_overrides([],1,SimpleNamespace(min_prob=.4,hybrid_turns=True,hybrid_lanechanges=True))
+    overrides,turn,lane,scopes=cli._hybrid_overrides([],1,SimpleNamespace(min_prob=.4,hybrid_turns=True,hybrid_lanechanges=True))
     assert not overrides and turn['conflicting_samples']==lane['conflicting_samples']==1
 
 
@@ -138,4 +138,39 @@ def test_single_step_offset_and_occupancy_jump_is_not_sustained_motion():
         s['body_occupancy'].update(reference_offset_m=-x,lane_occupancy=[
             dict(lane_id=1,fraction=1. if i<4 else 0.,direction_relation='same-direction'),
             dict(lane_id=2,fraction=0. if i<4 else 1.,direction_relation='same-direction')])
+    assert not lanechange_overrides([row],1)[0]
+
+
+@pytest.mark.parametrize('label',['pull_over','avoidance','turn_left','u_turn','lane_change_left'])
+def test_stationary_veto_only_changes_smoothed_lanechanges(tmp_path,monkeypatch,label):
+    from jevsceneminer import cli
+    monkeypatch.setattr(cli,'load_dotenv',lambda:None)
+    source=tmp_path/'source'
+    for folder in ('meta','steps'):(source/folder).mkdir(parents=True)
+    data=[]
+    for t in range(5):
+        row=sample(); row['t_ns']=t*10**9
+        row.update(lateral='keep_lane' if t==2 else label,lateral_probs={label:.9},
+                   script='synthetic',longitudinal='cruising',longitudinal_probs={'cruising':1.})
+        if t!=2:row['facts']={}
+        else:
+            for s in row['facts']['ego_samples']:
+                s.update(speed_m_s=0.,matched_lane_id=1)
+                s['body_occupancy'].update(reference_offset_m=0.,lane_occupancy=[dict(lane_id=1,fraction=1.,direction_relation='same-direction')])
+        data.append(row)
+    (source/'steps'/'d_s.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in data))
+    (source/'meta'/'d_s.json').write_text(json.dumps(dict(date='d',name='s',start_ns=0,end_ns=5*10**9,
+        step_s=1,traffic_side='right',has_indicator=False)))
+    out=tmp_path/'hybrid'
+    cli.main(['restitch',str(source),'--out',str(out),'--hybrid-lanechanges'])
+    scenes=json.loads((out/'scenes'/'d_s.json').read_text())['scenes']
+    if label=='lane_change_left':assert any(s['driving_decision']=='keep_lane' for s in scenes)
+    else:assert len(scenes)==1 and scenes[0]['driving_decision']==label
+
+
+@pytest.mark.parametrize('case',['successor','neighbor'])
+def test_malformed_topology_abstains(case):
+    row=sample()
+    if case=='successor':row['facts']['lanes'][0]['following']=[{}]
+    else:row['facts']['lanes'][0]['right_neighbor_id']=2.0
     assert not lanechange_overrides([row],1)[0]

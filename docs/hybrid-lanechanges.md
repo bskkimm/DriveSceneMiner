@@ -49,6 +49,9 @@ Stable same-chain stationary triplets (speed at most 0.1 m/s, offset span at mos
 0.1 m, footprint share at least 80%) veto lane-change labels, including smoothing
 holes. Ambiguous stationary map flips cause abstention rather than invented lane
 ownership. Manual lane reviews that remove native geometry remain unknown here.
+Stationary vetoes apply only to merged lane-change labels; they cannot erase
+other maneuver labels introduced by smoothing. Positive lane-change corrections
+also cannot overwrite another merged maneuver.
 
 ## Compatibility and audit
 
