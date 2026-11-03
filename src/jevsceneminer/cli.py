@@ -23,6 +23,7 @@ from jevsceneminer.inputs.nuplan import read_nuplan
 from jevsceneminer.inputs.nuplan_map import TRAFFIC_SIDE, find_map, load_nuplan_map
 from jevsceneminer.scenes.rules import rule_scenes
 from jevsceneminer.scenes.hybrid import turn_overrides
+from jevsceneminer.scenes.lanechanges import lanechange_overrides
 from jevsceneminer.scenes.merge import Step, session_document, stitch, write_scenes, extend_maneuver_ends
 from jevsceneminer.evidence.script import SAMPLE_SCHEMA_VERSION, TABLE_STEP_S, render_sample, strip_map
 
@@ -163,6 +164,18 @@ def _labels_for(args, meta: dict, lateral_only: bool = False):
                        has_indicator=meta.get("has_indicator", True))
 
 
+def _hybrid_overrides(rows, step_s, args):
+    turns, turn_audit = turn_overrides(rows,step_s,args.min_prob) if getattr(args,'hybrid_turns',False) else ({},None)
+    lanes, lane_audit = lanechange_overrides(rows,step_s,args.min_prob) if getattr(args,'hybrid_lanechanges',False) else ({},None)
+    conflicts={t for t in turns.keys() & lanes.keys() if turns[t]!=lanes[t]}
+    combined={t:label for t,label in {**turns,**lanes}.items() if t not in conflicts}
+    for audit in (turn_audit,lane_audit):
+        if audit is not None:audit['conflicting_samples']=len(conflicts)
+    scopes={t:('lane_change_left','lane_change_right') if label=='keep_lane' else ('keep_lane',label)
+            for t,label in lanes.items() if t in combined}
+    return combined,turn_audit,lane_audit,scopes
+
+
 def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     """Ask Jev about every script of one session, then stitch and write its run file."""
     sid = f"{meta['date']}_{meta['name']}"
@@ -212,16 +225,18 @@ def _classify(out: Path, meta: dict, scripts: dict, labels, args) -> None:
     if args.require_indicator:
         indicator = json.loads((out / "indicator" / f"{sid}.json").read_text())
     steps = [Step(t, answers[t]) for t in scripts]
-    overrides, hybrid = turn_overrides([json.loads(line) for line in result if line.strip()], meta['step_s'], args.min_prob) if getattr(args,'hybrid_turns',False) else ({}, None)
+    overrides, hybrid, hybrid_lanes, scopes = _hybrid_overrides([json.loads(line) for line in result if line.strip()],meta['step_s'],args)
     scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"], args.min_prob,
-                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase, lateral_overrides=overrides)
+                    indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase, lateral_overrides=overrides,
+                    lateral_override_scopes=scopes)
     scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
-                                 exclude_labels=('turn_left','turn_right') if hybrid else ())
+                                 exclude_labels=(('turn_left','turn_right') if hybrid else ()) + (('lane_change_left','lane_change_right') if hybrid_lanes else ()))
     models = sorted({a.model for a in answers.values() if a.model})
     doc = session_document(meta["date"], meta["name"], meta["start_ns"], meta["end_ns"], labels.version,
                            scenes, {
         "name": "jevsceneminer", "version": __version__, "models": models,
         "hybrid_turns": hybrid,
+        "hybrid_lanechanges": hybrid_lanes,
         "step_s": meta["step_s"], "past_s": meta.get("past_s"), "future_s": meta.get("future_s"),
         "table_step_s": meta.get("table_step_s"),
         "min_scene_s": args.min_scene, "min_phase_s": args.min_phase, "min_prob": args.min_prob,
@@ -312,14 +327,15 @@ def cmd_restitch(args) -> int:
         indicator = None
         if args.require_indicator:
             indicator = json.loads((src / "indicator" / f"{sid}.json").read_text())
-        overrides, hybrid = turn_overrides(rows,meta['step_s'],args.min_prob) if getattr(args,'hybrid_turns',False) else ({},None)
+        overrides, hybrid, hybrid_lanes, scopes = _hybrid_overrides(rows,meta['step_s'],args)
         scenes = stitch(steps, meta["step_s"], args.min_scene, meta["start_ns"], meta["end_ns"],
                         args.min_prob, indicator=indicator, needs=labels.indicator, min_phase_s=args.min_phase,
-                        lateral_overrides=overrides)
+                        lateral_overrides=overrides,lateral_override_scopes=scopes)
         scenes = extend_maneuver_ends(scenes, getattr(args,'maneuver_tail',0.0), meta.get('protected_lane_intervals_ns', []),
-                                     exclude_labels=('turn_left','turn_right') if hybrid else ())
+                                     exclude_labels=(('turn_left','turn_right') if hybrid else ()) + (('lane_change_left','lane_change_right') if hybrid_lanes else ()))
         generator.update(min_scene_s=args.min_scene, min_phase_s=args.min_phase, min_prob=args.min_prob,
                          hybrid_turns=hybrid,
+                         hybrid_lanechanges=hybrid_lanes,
                          maneuver_tail_s=args.maneuver_tail,
                          require_indicator=args.require_indicator, restitched_from=str(src))
         write_scenes(dst, session_document(meta["date"], meta["name"], meta["start_ns"], meta["end_ns"],
@@ -480,6 +496,8 @@ def main(argv=None) -> int:
     v.set_defaults(func=cmd_view)
 
     for parser in (r,c,t):
+        parser.add_argument('--hybrid-lanechanges', action='store_true',
+                            help='opt-in model/map/motion lane-change corrections with raw evidence preserved')
         parser.add_argument('--hybrid-turns', action='store_true',
                             help='conservative model/map/motion turn corrections; preserve raw probabilities')
         parser.add_argument('--maneuver-tail', type=float, default=0.0,

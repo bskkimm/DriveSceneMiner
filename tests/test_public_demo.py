@@ -17,6 +17,9 @@ def test_synthetic_source_to_structured_sample_and_nested_scene(tmp_path,source)
     assert row['facts']['schema_version']=='jsm-sample-1.1'
     assert len(row['facts']['ego_samples'])==26
     assert row['facts']['ego_samples'][10]['time_s']==0
+    for lane in row['facts']['lanes']:
+        assert 'left_neighbor_id' in lane and 'right_neighbor_id' in lane and 'previous_ids' in lane
+        assert all('id' in successor for successor in lane['following'])
     assert row['lateral']=='lane_change_right' and row['longitudinal']=='cruising'
     assert json.loads((out/'demo.json').read_text())['api_calls']==0
     meta = json.loads(next((out/'meta').glob('*.json')).read_text())

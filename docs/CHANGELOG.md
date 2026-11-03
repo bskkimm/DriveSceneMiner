@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add opt-in hybrid left/right lane changes with reciprocal lane-chain topology, continuous motion, crossing/settling evidence, stationary veto and raw-evidence preservation. Add numeric neighbor/predecessor/successor IDs to canonical lane facts without changing Jev's readable input.
 - Add experimental opt-in `--hybrid-turns` for model/map/motion left/right-turn corrections with audit metadata and unchanged raw evidence; available offline through `restitch`.
 - Rename the project and repository to DriveSceneMiner; retain the `jevsceneminer` package, CLI and saved-data identifiers for compatibility.
 - Share question/answer contracts and resumable inference while retaining Jev's existing CLI, imports and cache keys.

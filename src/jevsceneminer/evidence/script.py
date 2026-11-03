@@ -492,9 +492,11 @@ def render_sample(tl: Timeline, lanemap: LaneMap, now_ns: int, past_s: int = 10,
     out += ["", f"OBJECTS AT NOW (up to {MAX_OBJECTS} within {OBJECT_RADIUS_M:.0f} m)"] + objects
     out += ["", "OBJECT INTERACTION CONTEXT (same sample window, source IDs only)"] + interactions
     lane_facts=[dict(alias=alias,id=lane_id,kind=lanemap.lanes[lane_id].kind,
+                     left_neighbor_id=lanemap.lanes[lane_id].left,right_neighbor_id=lanemap.lanes[lane_id].right,
+                     previous_ids=list(lanemap.lanes[lane_id].previous),
                      intersection=lanemap.lanes[lane_id].is_intersection,
                      map_turn_direction=lanemap.lanes[lane_id].turn_direction,
-                     following=[dict(alias=names(f) if f in names else None,
+                     following=[dict(id=f,alias=names(f) if f in names else None,
                                      intersection=lanemap.lanes[f].is_intersection,
                                      map_turn_direction=lanemap.lanes[f].turn_direction)
                                 for f in lanemap.lanes[lane_id].following])
