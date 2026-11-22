@@ -78,7 +78,13 @@ def _candidate(row):
         if (not related or ordered[0]['time_s'] > times[start] or ordered[-1]['time_s'] < times[end]
                 or any(p['speed_m_s'] < 0 or p['speed_m_s'] >= .5 for p in related)):
             continue
-        ahead=[p for p in related if p['time_s'] <= times[peak] and p['ahead_m'] > 0 and p['reference_lane_overlap_m2'] > .01 and sign*p['left_m'] < 0]
+        headings=[math.radians(point['body_occupancy']['lane_relative_heading_deg']) for point in ego[start:end+1]]
+        # Object positions are in ego coordinates. Use every observed heading as
+        # a conservative bound rather than treating ego-left as lane-left.
+        def opposite_reference_side(point):
+            return all(sign*(point['ahead_m']*math.sin(h)+point['left_m']*math.cos(h)) < 0 for h in headings)
+        ahead=[p for p in related if p['time_s'] <= times[peak] and p['ahead_m'] > 0
+               and p['reference_lane_overlap_m2'] > .01 and opposite_reference_side(p)]
         behind=[p for p in related if times[peak] <= p['time_s'] <= times[end] and p['ahead_m'] < 0]
         if ahead and behind and min(p['ego_body_clearance_m'] for p in related) <= 3:
             candidates.append(track['track_id'])
@@ -107,7 +113,7 @@ def avoidance_overrides(rows, step_s, min_prob=.4):
         interval=rows[bisect_left(times,first):bisect_right(times,last)]
         if not interval or any(r.get('lateral') not in ('keep_lane','avoidance') for r in interval):
             continue
-        if abs(interval[0]['t_ns']-first)>step_s*1e8 or abs(interval[-1]['t_ns']-last)>step_s*1e8:
+        if interval[0]['t_ns']-first >= step_s*1e9 or last-interval[-1]['t_ns'] >= step_s*1e9:
             continue
         if any(abs((b['t_ns']-a['t_ns'])/1e9-step_s) > step_s*.1 for a,b in zip(interval,interval[1:])):
             continue

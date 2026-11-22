@@ -15,6 +15,8 @@ It requires complete model coverage of the candidate interval, at least one raw
 winning avoidance prediction above `--min-prob`, and no conflicting raw maneuver.
 Object observations must cover the maneuver with gaps no longer than one second.
 The ego heading must remain within 15 degrees of the reference-lane tangent.
+Obstacle side is checked against a conservative range of the observed headings,
+accounting for the object coordinates being relative to the ego heading.
 
 The rule requires available body geometry and known non-intersection map context.
 Ambiguous overlapping map polygons, missing facts, incomplete windows, moving

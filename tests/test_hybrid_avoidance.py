@@ -69,6 +69,15 @@ def test_incomplete_temporal_evidence_abstains(case):
     assert not avoidance_overrides(rows,1)[0]
 
 
+def test_obstacle_side_accounts_for_ego_heading():
+    row=sample()
+    for point in row['facts']['ego_samples']:
+        point['body_occupancy']['lane_relative_heading_deg']=15.
+    for point in row['facts']['object_tracks'][0]['observations']:
+        if point['ahead_m'] > 0:point['left_m']=-.5
+    assert not avoidance_overrides(interval_rows(row),1)[0]
+
+
 def test_restitch_preserves_raw_evidence_and_no_extra_tail(tmp_path,monkeypatch):
     from jevsceneminer import cli
     monkeypatch.setattr(cli,'load_dotenv',lambda:None)
