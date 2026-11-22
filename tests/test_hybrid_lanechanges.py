@@ -127,7 +127,7 @@ def test_rule_disagreement_abstains_instead_of_selecting_priority(monkeypatch):
     from jevsceneminer import cli
     monkeypatch.setattr(cli,'turn_overrides',lambda *args:({1:'turn_right'},{}))
     monkeypatch.setattr(cli,'lanechange_overrides',lambda *args:({1:'lane_change_right'},{}))
-    overrides,turn,lane,scopes=cli._hybrid_overrides([],1,SimpleNamespace(min_prob=.4,hybrid_turns=True,hybrid_lanechanges=True))
+    overrides,turn,lane,avoidance,scopes=cli._hybrid_overrides([],1,SimpleNamespace(min_prob=.4,hybrid_turns=True,hybrid_lanechanges=True))
     assert not overrides and turn['conflicting_samples']==lane['conflicting_samples']==1
 
 
